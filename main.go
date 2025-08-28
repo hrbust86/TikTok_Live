@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"io"
 	"log"
 	"net/http"
@@ -14,10 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"Sunny/tiktok_hack/generated"
+	"google.golang.org/protobuf/reflect/protoreflect"
+
+	tiktok_hack "Sunny/tiktok_hack/generated"
+
 	"github.com/gorilla/websocket"
 	"github.com/qtgolang/SunnyNet/SunnyNet"
-	"github.com/qtgolang/SunnyNet/public"
+	"github.com/qtgolang/SunnyNet/src/public"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -35,7 +37,7 @@ func main() {
 	defer s.Close()
 	//随机tls指纹
 	//s.SetRandomTLS(true)
-	s.SetGlobalProxy("socket5://127.0.0.1:21586")
+	s.SetGlobalProxy("socket5://127.0.0.1:21586", 60000)
 	st := s.Start()
 	if st.Error != nil {
 		log.Fatalf(st.Error.Error())
@@ -153,17 +155,17 @@ func getAgentCount() int {
 }
 
 // HttpCallback HTTP 回调函数
-func HttpCallback(Conn *SunnyNet.HttpConn) {
+func HttpCallback(Conn SunnyNet.ConnHTTP) {
 	// 处理 HTTP 连接
 }
 
 // WSCallback WebSocket 回调函数
-func WSCallback(Conn *SunnyNet.WsConn) {
-	if !strings.Contains(Conn.Url, "tiktok.com/webcast/im/") {
+func WSCallback(Conn SunnyNet.ConnWebSocket) {
+	if !strings.Contains(Conn.URL(), "tiktok.com/webcast/im/") {
 		return
 	}
 
-	message := Conn.GetMessageBody()
+	message := Conn.Body()
 	PushFrame := &tiktok_hack.WebcastPushFrame{}
 	err := proto.Unmarshal(message, PushFrame)
 	if err != nil {
@@ -233,19 +235,19 @@ func CheckGzip(headers *tiktok_hack.WebcastPushFrame) bool {
 }
 
 // TcpCallback TCP 回调函数
-func TcpCallback(Conn *SunnyNet.TcpConn) {
+func TcpCallback(Conn SunnyNet.ConnTCP) {
 	// 处理 TCP 连接
 }
 
 // UdpCallback UDP 回调函数
-func UdpCallback(Conn *SunnyNet.UDPConn) {
-	if public.SunnyNetUDPTypeReceive == Conn.Type {
+func UdpCallback(Conn SunnyNet.ConnUDP) {
+	if public.SunnyNetUDPTypeReceive == Conn.Type() {
 		// 处理接收的 UDP 数据
 	}
-	if public.SunnyNetUDPTypeSend == Conn.Type {
+	if public.SunnyNetUDPTypeSend == Conn.Type() {
 		// 处理发送的 UDP 数据
 	}
-	if public.SunnyNetUDPTypeClosed == Conn.Type {
+	if public.SunnyNetUDPTypeClosed == Conn.Type() {
 		// 处理关闭的 UDP 连接
 	}
 }
