@@ -32,7 +32,7 @@ func main() {
 	// 绑定回调函数
 	Sunny.SetGoCallback(HttpCallback, TcpCallback, WSCallback, UdpCallback)
 
-	// 设置端口并启动
+	// 设置端口并启动 SunnyNet 代理服务器
 	s := Sunny.SetPort(23809)
 	defer s.Close()
 	//随机tls指纹
@@ -51,15 +51,16 @@ func main() {
 	}
 
 	// 处理 WebSocket 请求
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(upgrader, w, r)
 	})
 
 	fmt.Println("浏览器代理设置为:127.0.0.1:23809")
 	fmt.Println("上游代理地址为:127.0.0.1:21586")
+	fmt.Println("WebSocket 服务地址为:ws://127.0.0.1:18080/ws")
 	fmt.Println("正在运行....")
 
-	// 启动 HTTP 服务器
+	// 启动 HTTP 服务器（用于 WebSocket）
 	go func() {
 		err := http.ListenAndServe(":18080", nil)
 		if err != nil {
