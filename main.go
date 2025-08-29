@@ -3,12 +3,13 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -203,12 +204,12 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 		for _, v := range response.Messages {
 			msg, err := MatchMethod(v.Method)
 			if err != nil {
-				log.Printf("未知消息，无法处理: %v, %s\n", err, hex.EncodeToString(v.Payload))
+				//log.Printf("未知消息，无法处理: %v, %s\n", err, hex.EncodeToString(v.Payload))
 				continue
 			}
 			err = proto.Unmarshal(v.Payload, msg)
 			if err != nil {
-				log.Println("解析消息失败:", err)
+				//log.Println("解析消息失败:", err)
 				continue
 			}
 
@@ -217,6 +218,21 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 			if err != nil {
 				log.Println("JSON 序列化失败:", err)
 				continue
+			}
+
+			if v.Method == "WebcastGiftMessage" {
+				processGiftMessage(marshal)
+				//log.Println(string(marshal) + "\n\n")
+
+				// 追加写入到文件
+				//err = appendToFile("gift_messages.json", string(marshal)+"\n\n")
+				//if err != nil {
+				//	log.Printf("写入文件失败: %v", err)
+				//}
+			}
+
+			if v.Method == "WebcastChatMessage" {
+				//log.Println(string(marshal))
 			}
 
 			// 遍历 agentlist，将消息发送到每个连接
@@ -257,4 +273,66 @@ func MatchMethod(method string) (protoreflect.ProtoMessage, error) {
 		return createMessage(), nil
 	}
 	return nil, errors.New("未知消息: " + method)
+}
+
+// processGiftMessage 处理礼物消息
+func processGiftMessage(marshal []byte) {
+	// 解析JSON以获取giftId
+	var jsonData map[string]interface{}
+	if err := json.Unmarshal(marshal, &jsonData); err == nil {
+		if giftId, exists := jsonData["giftId"]; exists {
+			log.Printf("giftId: %v", giftId)
+			log.Printf("fanTicketCount: %v", jsonData["fanTicketCount"])
+			log.Printf("groupCount: %v", jsonData["groupCount"])
+			log.Printf("repeatCount: %v", jsonData["repeatCount"])
+			log.Printf("comboCount: %v", jsonData["comboCount"])
+			log.Printf("repeatEnd: %v", jsonData["repeatEnd"])
+
+			// 解析gift对象下的name字段
+			if gift, exists := jsonData["gift"]; exists {
+				if giftMap, ok := gift.(map[string]interface{}); ok {
+					if name, exists := giftMap["name"]; exists {
+						log.Printf("礼物名称: %v", name)
+						log.Printf("combo: %v", giftMap["combo"])
+					} else {
+						log.Println("未找到礼物名称字段")
+					}
+				}
+			} else {
+				log.Println("未找到gift字段")
+			}
+
+			// 解析user对象下的nickname字段
+			if user, exists := jsonData["user"]; exists {
+				if userMap, ok := user.(map[string]interface{}); ok {
+					if nickname, exists := userMap["nickname"]; exists {
+						log.Printf("用户昵称: %v", nickname)
+					} else {
+						log.Println("未找到用户昵称字段")
+					}
+				} else {
+					log.Println("user字段不是对象类型")
+				}
+			} else {
+				log.Println("未找到user字段")
+			}
+		} else {
+			log.Println("未找到giftId字段")
+		}
+		log.Println("--------------------------------")
+	} else {
+		log.Printf("解析JSON失败: %v", err)
+	}
+}
+
+// appendToFile 追加内容到文件
+func appendToFile(filename, content string) error {
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(content)
+	return err
 }
