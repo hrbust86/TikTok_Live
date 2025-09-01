@@ -222,17 +222,10 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 
 			if v.Method == "WebcastGiftMessage" {
 				processGiftMessage(marshal)
-				//log.Println(string(marshal) + "\n\n")
-
-				// 追加写入到文件
-				//err = appendToFile("gift_messages.json", string(marshal)+"\n\n")
-				//if err != nil {
-				//	log.Printf("写入文件失败: %v", err)
-				//}
 			}
 
 			if v.Method == "WebcastChatMessage" {
-				//log.Println(string(marshal))
+				processChatMessage(marshal)
 			}
 
 			// 遍历 agentlist，将消息发送到每个连接
@@ -322,6 +315,33 @@ func processGiftMessage(marshal []byte) {
 		log.Println("--------------------------------")
 	} else {
 		log.Printf("解析JSON失败: %v", err)
+	}
+}
+
+// processChatMessage 处理聊天消息
+func processChatMessage(marshal []byte) {
+	// 解析WebcastChatMessage中的user和content字段
+	var jsonData map[string]interface{}
+	if err := json.Unmarshal(marshal, &jsonData); err == nil {
+		// 解析user对象下的字段
+		if user, exists := jsonData["user"]; exists {
+			if userMap, ok := user.(map[string]interface{}); ok {
+				// 解析user下的nickname字段
+				if nickname, exists := userMap["nickname"]; exists {
+					log.Printf("用户昵称: %v", nickname)
+				}
+				// 解析user下的其他字段
+				if avatarThumb, exists := userMap["avatarThumb"]; exists {
+					log.Printf("用户头像: %v", avatarThumb)
+				}
+			}
+		}
+
+		// 解析content字段（这是消息内容，不是user下的字段）
+		if content, exists := jsonData["content"]; exists {
+			log.Printf("消息内容: %v", content)
+		}
+		log.Println("--------------------------------")
 	}
 }
 
