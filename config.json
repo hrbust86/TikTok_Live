@@ -1,0 +1,14 @@
+{
+  "websocket_server": {
+    "url": "ws://127.0.0.1:18080/",
+    "headers": {
+      "Authorization": "Bearer new-token",
+      "User-Agent": "UpdatedClient/1.0"
+    }
+  },
+  "tiktok_proxy": {
+    "port": 23809,
+    "upstream_proxy": "socket5://127.0.0.1:21586",
+    "timeout": 60000
+  }
+}

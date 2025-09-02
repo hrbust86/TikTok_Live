@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 
@@ -21,27 +24,62 @@ import (
 
 var Sunny = SunnyNet.NewSunny()
 
-//var agentlist sync.Map // 使用 sync.Map 替代 map[string]*agent
+// WebSocket客户端实例
+var wsClient *WebSocketClient
+var wsClientMutex sync.Mutex
 
-// agent 结构体用于存储 WebSocket 连接及其相关信息
+// 初始化WebSocket客户端
+func initWebSocketClient() {
+	wsClientMutex.Lock()
+	defer wsClientMutex.Unlock()
+
+	// 从配置文件获取WebSocket服务器配置
+	config := LoadConfig()
+
+	// 创建WebSocket客户端
+	wsClient = NewWebSocketClient(config.WebSocketServer.URL, config.WebSocketServer.Headers)
+
+	// 连接到WebSocket服务器
+	if err := wsClient.Connect(); err != nil {
+		log.Printf("连接WebSocket服务器失败: %v", err)
+		return
+	}
+
+	// 启动监听协程
+	go wsClient.Listen()
+}
+
 func main() {
+	// 检查命令行参数
+	if len(os.Args) > 1 && os.Args[1] == "test" {
+		// 运行测试模式
+		RunTests()
+		return
+	}
+
+	// 初始化WebSocket客户端
+	initWebSocketClient()
+
 	// 绑定回调函数
 	Sunny.SetGoCallback(HttpCallback, TcpCallback, WSCallback, UdpCallback)
 
+	// 加载配置
+	config := LoadConfig()
+
 	// 设置端口并启动 SunnyNet 代理服务器
-	s := Sunny.SetPort(23809)
+	s := Sunny.SetPort(config.TikTokProxy.Port)
 	defer s.Close()
 	//随机tls指纹
 	//s.SetRandomTLS(true)
-	s.SetGlobalProxy("socket5://127.0.0.1:21586", 60000)
+	s.SetGlobalProxy(config.TikTokProxy.UpstreamProxy, config.TikTokProxy.Timeout)
 	st := s.Start()
 	if st.Error != nil {
 		log.Fatalf(st.Error.Error())
 	}
 
-	fmt.Println("浏览器代理设置为:127.0.0.1:23809")
-	fmt.Println("上游代理地址为:127.0.0.1:21586")
-	//fmt.Println("WebSocket 服务地址为:ws://127.0.0.1:18080/ws")
+	fmt.Printf("浏览器代理设置为:127.0.0.1:%d\n", config.TikTokProxy.Port)
+	fmt.Printf("上游代理地址为:%s\n", config.TikTokProxy.UpstreamProxy)
+	fmt.Printf("WebSocket 服务地址为:%s\n", GetWebSocketServerURL())
 	fmt.Println("正在运行....")
 
 	// 避免程序退出
@@ -112,6 +150,9 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 				continue
 			}
 
+			// 发送marshal数据到WebSocket服务器
+			sendMarshalDataToWebSocket(v.Method, marshal)
+
 			if v.Method == "WebcastGiftMessage" {
 				processGiftMessage(marshal)
 			}
@@ -152,4 +193,35 @@ func MatchMethod(method string) (protoreflect.ProtoMessage, error) {
 		return createMessage(), nil
 	}
 	return nil, errors.New("未知消息: " + method)
+}
+
+// sendMarshalDataToWebSocket 将marshal数据发送到WebSocket服务器
+func sendMarshalDataToWebSocket(method string, marshalData []byte) {
+	wsClientMutex.Lock()
+	defer wsClientMutex.Unlock()
+
+	if wsClient == nil || !wsClient.IsConnected() {
+		log.Println("WebSocket客户端未连接，尝试重新连接...")
+		initWebSocketClient()
+		if wsClient == nil || !wsClient.IsConnected() {
+			log.Println("WebSocket客户端连接失败")
+			return
+		}
+	}
+
+	// 创建包含方法信息的消息结构
+	message := map[string]interface{}{
+		"method":    method,
+		"data":      marshalData,
+		"timestamp": time.Now().Unix(),
+	}
+
+	// 发送JSON消息到WebSocket服务器
+	if err := wsClient.SendJSON(message); err != nil {
+		log.Printf("发送消息到WebSocket服务器失败: %v", err)
+		// 如果发送失败，尝试重新连接
+		if err := wsClient.Reconnect(); err != nil {
+			log.Printf("重新连接失败: %v", err)
+		}
+	}
 }
