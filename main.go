@@ -16,17 +16,41 @@ import (
 
 	tiktok_hack "Sunny/tiktok_hack/generated"
 
+	"sync/atomic"
+
 	"github.com/qtgolang/SunnyNet/SunnyNet"
 	"github.com/qtgolang/SunnyNet/src/public"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
-var Sunny = SunnyNet.NewSunny()
+var (
+	Sunny = SunnyNet.NewSunny()
 
-// WebSocket客户端实例
-var wsClient *WebSocketClient
-var wsClientMutex sync.Mutex
+	// WebSocket客户端实例
+	wsClient      *WebSocketClient
+	wsClientMutex sync.Mutex
+
+	// 消息队列相关
+	messageQueue = make(chan MessageData, 10000) // 缓冲10000条消息
+	queueClosed  = make(chan struct{})
+)
+
+// 消息数据结构
+type MessageData struct {
+	Method      string
+	MarshalData []byte
+	Timestamp   int64
+	SequenceID  uint64 // 序列号，确保顺序
+}
+
+// 全局序列号计数器
+var sequenceCounter uint64 = 0
+
+// 获取下一个序列号
+func getNextSequenceID() uint64 {
+	return atomic.AddUint64(&sequenceCounter, 1)
+}
 
 // 初始化WebSocket客户端
 func initWebSocketClient() {
@@ -47,6 +71,8 @@ func initWebSocketClient() {
 
 	// 启动监听协程
 	go wsClient.Listen()
+
+	log.Println("WebSocket客户端初始化完成")
 }
 
 func main() {
@@ -56,6 +82,9 @@ func main() {
 		RunTests()
 		return
 	}
+
+	// 启动消息发送协程
+	startMessageSender()
 
 	// 初始化WebSocket客户端
 	initWebSocketClient()
@@ -195,33 +224,101 @@ func MatchMethod(method string) (protoreflect.ProtoMessage, error) {
 	return nil, errors.New("未知消息: " + method)
 }
 
-// sendMarshalDataToWebSocket 将marshal数据发送到WebSocket服务器
+// sendMarshalDataToWebSocket 将marshal数据异步发送到WebSocket服务器（保证顺序）
 func sendMarshalDataToWebSocket(method string, marshalData []byte) {
+	// 创建消息数据
+	msg := MessageData{
+		Method:      method,
+		MarshalData: marshalData,
+		Timestamp:   time.Now().Unix(),
+		SequenceID:  getNextSequenceID(),
+	}
+
+	// 异步将消息加入队列，不阻塞WSCallback
+	go func() {
+		select {
+		case messageQueue <- msg:
+			// 消息成功加入队列
+			log.Printf("消息已加入队列: %s (序列号: %d)", method, msg.SequenceID)
+		case <-queueClosed:
+			// 队列已关闭
+			log.Printf("消息队列已关闭，丢弃消息: %s", method)
+		default:
+			// 队列满了，记录警告
+			log.Printf("警告: 消息队列已满，丢弃消息: %s (序列号: %d)", method, msg.SequenceID)
+		}
+	}()
+}
+
+// startMessageSender 启动消息发送协程
+func startMessageSender() {
+	go func() {
+		log.Println("启动消息发送协程...")
+
+		for {
+			select {
+			case msg, ok := <-messageQueue:
+				if !ok {
+					log.Println("消息队列已关闭，发送协程退出")
+					return
+				}
+
+				// 发送消息到WebSocket服务器
+				if err := sendMessageToWebSocket(msg); err != nil {
+					log.Printf("发送消息失败 (序列号: %d): %v", msg.SequenceID, err)
+				} else {
+					log.Printf("消息发送成功 (序列号: %d): %s", msg.SequenceID, msg.Method)
+				}
+
+			case <-queueClosed:
+				log.Println("收到关闭信号，发送协程退出")
+				return
+			}
+		}
+	}()
+}
+
+// sendMessageToWebSocket 实际发送消息到WebSocket服务器
+func sendMessageToWebSocket(msg MessageData) error {
 	wsClientMutex.Lock()
 	defer wsClientMutex.Unlock()
 
+	// 检查WebSocket客户端状态
 	if wsClient == nil || !wsClient.IsConnected() {
-		log.Println("WebSocket客户端未连接，尝试重新连接...")
-		initWebSocketClient()
-		if wsClient == nil || !wsClient.IsConnected() {
-			log.Println("WebSocket客户端连接失败")
-			return
-		}
+		log.Printf("WebSocket客户端未连接，尝试重新连接... (序列号: %d)", msg.SequenceID)
+		// 异步重连
+		go func() {
+			initWebSocketClient()
+		}()
+		return fmt.Errorf("WebSocket客户端未连接")
 	}
 
-	// 创建包含方法信息的消息结构
+	// 创建发送消息结构
 	message := map[string]interface{}{
-		"method":    method,
-		"data":      marshalData,
-		"timestamp": time.Now().Unix(),
+		"method":      msg.Method,
+		"data":        msg.MarshalData,
+		"timestamp":   msg.Timestamp,
+		"sequence_id": msg.SequenceID,
 	}
 
 	// 发送JSON消息到WebSocket服务器
 	if err := wsClient.SendJSON(message); err != nil {
-		log.Printf("发送消息到WebSocket服务器失败: %v", err)
-		// 如果发送失败，尝试重新连接
-		if err := wsClient.Reconnect(); err != nil {
-			log.Printf("重新连接失败: %v", err)
-		}
+		log.Printf("发送消息到WebSocket服务器失败 (序列号: %d): %v", msg.SequenceID, err)
+		// 异步重连
+		go func() {
+			if err := wsClient.Reconnect(); err != nil {
+				log.Printf("重新连接失败: %v", err)
+			}
+		}()
+		return err
 	}
+
+	return nil
+}
+
+// 优雅关闭消息队列
+func shutdownMessageQueue() {
+	close(queueClosed)
+	close(messageQueue)
+	log.Println("消息队列已关闭")
 }
