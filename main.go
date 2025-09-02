@@ -34,6 +34,9 @@ var (
 	// 消息队列相关
 	messageQueue = make(chan MessageData, 10000) // 缓冲10000条消息
 	queueClosed  = make(chan struct{})
+
+	// 全局变量
+	uniqueId string // 用于存储uniqueId的全局字符串变量
 )
 
 // 消息数据结构
@@ -42,6 +45,7 @@ type MessageData struct {
 	MarshalData []byte
 	Timestamp   int64
 	SequenceID  uint64 // 序列号，确保顺序
+	UniqueId    string // 添加uniqueId字段
 }
 
 // 全局序列号计数器
@@ -77,9 +81,18 @@ func initWebSocketClient() {
 
 func main() {
 	// 检查命令行参数
-	if len(os.Args) > 1 && os.Args[1] == "test" {
-		// 运行测试模式
-		RunTests()
+	if len(os.Args) > 1 {
+		if os.Args[1] == "test" {
+			// 运行测试模式
+			RunTests()
+			return
+		} else {
+			// 第一个参数作为uniqueId
+			uniqueId = os.Args[1]
+			log.Printf("设置uniqueId: %s", uniqueId)
+		}
+	} else {
+		log.Println("警告: 未提供uniqueId参数")
 		return
 	}
 
@@ -109,6 +122,7 @@ func main() {
 	fmt.Printf("浏览器代理设置为:127.0.0.1:%d\n", config.TikTokProxy.Port)
 	fmt.Printf("上游代理地址为:%s\n", config.TikTokProxy.UpstreamProxy)
 	fmt.Printf("WebSocket 服务地址为:%s\n", GetWebSocketServerURL())
+	fmt.Printf("当前uniqueId: %s\n", uniqueId)
 	fmt.Println("正在运行....")
 
 	// 避免程序退出
@@ -181,7 +195,7 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 
 			// 发送marshal数据到WebSocket服务器
 			if v.Method == "WebcastGiftMessage" || v.Method == "WebcastChatMessage" {
-				sendMarshalDataToWebSocket(v.Method, marshal)
+				sendMarshalDataToWebSocket(v.Method, marshal, uniqueId)
 			}
 			if v.Method == "WebcastGiftMessage" {
 				//processGiftMessage(marshal)
@@ -226,13 +240,14 @@ func MatchMethod(method string) (protoreflect.ProtoMessage, error) {
 }
 
 // sendMarshalDataToWebSocket 将marshal数据异步发送到WebSocket服务器（保证顺序）
-func sendMarshalDataToWebSocket(method string, marshalData []byte) {
+func sendMarshalDataToWebSocket(method string, marshalData []byte, uniqueId string) {
 	// 创建消息数据
 	msg := MessageData{
 		Method:      method,
 		MarshalData: marshalData,
 		Timestamp:   time.Now().Unix(),
 		SequenceID:  getNextSequenceID(),
+		UniqueId:    uniqueId, // 添加uniqueId字段
 	}
 
 	// 异步将消息加入队列，不阻塞WSCallback
@@ -240,7 +255,7 @@ func sendMarshalDataToWebSocket(method string, marshalData []byte) {
 		select {
 		case messageQueue <- msg:
 			// 消息成功加入队列
-			log.Printf("消息已加入队列: %s (序列号: %d)", method, msg.SequenceID)
+			log.Printf("消息已加入队列: %s (序列号: %d, uniqueId: %s)", method, msg.SequenceID, uniqueId)
 		case <-queueClosed:
 			// 队列已关闭
 			log.Printf("消息队列已关闭，丢弃消息: %s", method)
@@ -302,6 +317,7 @@ func sendMessageToWebSocket(msg MessageData) error {
 		"data":        dataString,
 		"timestamp":   msg.Timestamp,
 		"sequence_id": msg.SequenceID,
+		"unique_id":   msg.UniqueId, // 添加uniqueId字段
 	}
 
 	// 发送JSON消息到WebSocket服务器
