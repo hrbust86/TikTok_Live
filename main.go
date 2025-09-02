@@ -180,14 +180,15 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 			}
 
 			// 发送marshal数据到WebSocket服务器
-			sendMarshalDataToWebSocket(v.Method, marshal)
-
+			if v.Method == "WebcastGiftMessage" || v.Method == "WebcastChatMessage" {
+				sendMarshalDataToWebSocket(v.Method, marshal)
+			}
 			if v.Method == "WebcastGiftMessage" {
-				processGiftMessage(marshal)
+				//processGiftMessage(marshal)
 			}
 
 			if v.Method == "WebcastChatMessage" {
-				processChatMessage(marshal)
+				//	processChatMessage(marshal)
 			}
 
 		}
@@ -294,9 +295,11 @@ func sendMessageToWebSocket(msg MessageData) error {
 	}
 
 	// 创建发送消息结构
+	// 将marshalData转换为字符串
+	dataString := string(msg.MarshalData)
 	message := map[string]interface{}{
 		"method":      msg.Method,
-		"data":        msg.MarshalData,
+		"data":        dataString,
 		"timestamp":   msg.Timestamp,
 		"sequence_id": msg.SequenceID,
 	}
