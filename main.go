@@ -125,7 +125,15 @@ func main() {
 	defer s.Close()
 	//随机tls指纹
 	//s.SetRandomTLS(true)
-	s.SetGlobalProxy(config.TikTokProxy.UpstreamProxy, config.TikTokProxy.Timeout)
+
+	// 只有当上游代理不为空时才设置全局代理
+	if config.TikTokProxy.UpstreamProxy != "" {
+		s.SetGlobalProxy(config.TikTokProxy.UpstreamProxy, config.TikTokProxy.Timeout)
+		log.Printf("已设置上游代理: %s", config.TikTokProxy.UpstreamProxy)
+	} else {
+		log.Println("未设置上游代理，将直接连接")
+	}
+
 	st := s.Start()
 	if st.Error != nil {
 		log.Fatalf(st.Error.Error())
