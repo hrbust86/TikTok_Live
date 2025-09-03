@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -57,7 +56,7 @@ func getNextSequenceID() uint64 {
 }
 
 // 初始化WebSocket客户端
-func initWebSocketClient() {
+func initWebSocketClient() error {
 	wsClientMutex.Lock()
 	defer wsClientMutex.Unlock()
 
@@ -66,18 +65,20 @@ func initWebSocketClient() {
 
 	// 连接到WebSocket服务器
 	if err := wsClient.Connect(); err != nil {
-		log.Printf("连接WebSocket服务器失败: %v", err)
-		return
+		LogError("连接WebSocket服务器失败: %v", err)
+		return err
 	}
 
 	// 启动监听协程
 	go wsClient.Listen()
 
-	log.Println("WebSocket客户端初始化完成")
+	LogInfo("WebSocket客户端初始化完成")
+	return nil
 }
 
 func main() {
 	// 检查命令行参数
+	LogInfo("========================start===========================")
 	if len(os.Args) > 1 {
 		if os.Args[1] == "test" {
 			// 运行测试模式
@@ -86,36 +87,39 @@ func main() {
 		} else {
 			// 第一个参数作为uniqueId
 			uniqueId = os.Args[1]
-			log.Printf("设置uniqueId: %s", uniqueId)
 		}
 	} else {
-		log.Println("警告: 未提供uniqueId参数")
+		LogWarning("警告: 未提供uniqueId参数")
 		return
 	}
 
 	// 加载配置
 	config, err := LoadConfig()
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		LogError("加载配置失败: %v", err)
+		return
 	}
 
 	// 输出配置信息
-	fmt.Println("=== 配置信息 ===")
-	fmt.Printf("WebSocket服务器配置:\n")
-	fmt.Printf("  URL: %s\n", config.WebSocketServer.URL)
-	fmt.Printf("  Headers: %v\n", config.WebSocketServer.Headers)
-	fmt.Printf("TikTok代理配置:\n")
-	fmt.Printf("  端口: %d\n", config.TikTokProxy.Port)
-	fmt.Printf("  上游代理: %s\n", config.TikTokProxy.UpstreamProxy)
-	fmt.Printf("  超时时间: %d ms\n", config.TikTokProxy.Timeout)
-	fmt.Printf("UniqueId: %s\n", uniqueId)
-	fmt.Println("================")
+	LogInfo("=== 配置信息 ===")
+	LogInfo("WebSocket服务器配置:")
+	LogInfo("  URL: %s", config.WebSocketServer.URL)
+	LogInfo("  Headers: %v", config.WebSocketServer.Headers)
+	LogInfo("TikTok代理配置:")
+	LogInfo("  端口: %d", config.TikTokProxy.Port)
+	LogInfo("  上游代理: %s", config.TikTokProxy.UpstreamProxy)
+	LogInfo("  超时时间: %d ms", config.TikTokProxy.Timeout)
+	LogInfo("UniqueId: %s", uniqueId)
+	LogInfo("================")
 
 	// 启动消息发送协程
 	startMessageSender()
 
 	// 初始化WebSocket客户端
-	initWebSocketClient()
+	if err := initWebSocketClient(); err != nil {
+		LogError("初始化WebSocket客户端失败: %v", err)
+		return
+	}
 
 	// 绑定回调函数
 	Sunny.SetGoCallback(HttpCallback, TcpCallback, WSCallback, UdpCallback)
@@ -129,21 +133,21 @@ func main() {
 	// 只有当上游代理不为空时才设置全局代理
 	if config.TikTokProxy.UpstreamProxy != "" {
 		s.SetGlobalProxy(config.TikTokProxy.UpstreamProxy, config.TikTokProxy.Timeout)
-		log.Printf("已设置上游代理: %s", config.TikTokProxy.UpstreamProxy)
+		//LogInfo("已设置上游代理: %s", config.TikTokProxy.UpstreamProxy)
 	} else {
-		log.Println("未设置上游代理，将直接连接")
+		LogInfo("未设置上游代理，将直接连接")
 	}
 
 	st := s.Start()
 	if st.Error != nil {
-		log.Fatalf(st.Error.Error())
+		LogError(st.Error.Error())
 	}
 
-	fmt.Printf("浏览器代理设置为:127.0.0.1:%d\n", config.TikTokProxy.Port)
-	fmt.Printf("上游代理地址为:%s\n", config.TikTokProxy.UpstreamProxy)
-	fmt.Printf("WebSocket 服务地址为:%s\n", GetWebSocketServerURL())
-	fmt.Printf("当前uniqueId: %s\n", uniqueId)
-	fmt.Println("正在运行....")
+	//LogInfo("浏览器代理设置为:127.0.0.1:%d", config.TikTokProxy.Port)
+	//LogInfo("上游代理地址为:%s", config.TikTokProxy.UpstreamProxy)
+	//LogInfo("WebSocket 服务地址为:%s", GetWebSocketServerURL())
+	//LogInfo("当前uniqueId: %s", uniqueId)
+	//LogInfo("正在运行....")
 
 	// 避免程序退出
 	select {}
@@ -164,7 +168,7 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 	PushFrame := &tiktok_hack.WebcastPushFrame{}
 	err := proto.Unmarshal(message, PushFrame)
 	if err != nil {
-		log.Println("解析消息失败:", err)
+		LogError("解析消息失败:", err)
 		return
 	}
 
@@ -176,40 +180,40 @@ func WSCallback(Conn SunnyNet.ConnWebSocket) {
 	if isGzip && PushFrame.PayloadType == "msg" {
 		gzipReader, err := gzip.NewReader(bytes.NewReader(PushFrame.Payload))
 		if err != nil {
-			log.Println("解析 Gzip 消息失败:", err)
+			LogError("解析 Gzip 消息失败:", err)
 			return
 		}
 		defer gzipReader.Close()
 
 		uncompressedData, err := io.ReadAll(gzipReader)
 		if err != nil {
-			log.Println("读取解压数据失败:", err)
+			LogError("读取解压数据失败:", err)
 			return
 		}
 
 		response := &tiktok_hack.WebcastResponse{}
 		err = proto.Unmarshal(uncompressedData, response)
 		if err != nil {
-			log.Println("解析解压数据失败:", err)
+			LogError("解析解压数据失败:", err)
 			return
 		}
 
 		for _, v := range response.Messages {
 			msg, err := MatchMethod(v.Method)
 			if err != nil {
-				//log.Printf("未知消息，无法处理: %v, %s\n", err, hex.EncodeToString(v.Payload))
+				//LogInfo("未知消息，无法处理: %v, %s\n", err, hex.EncodeToString(v.Payload))
 				continue
 			}
 			err = proto.Unmarshal(v.Payload, msg)
 			if err != nil {
-				//log.Println("解析消息失败:", err)
+				LogError("解析消息失败:", err)
 				continue
 			}
 
 			// 序列化为 JSON
 			marshal, err := protojson.Marshal(msg)
 			if err != nil {
-				log.Println("JSON 序列化失败:", err)
+				LogError("JSON 序列化失败:", err)
 				continue
 			}
 
@@ -275,13 +279,13 @@ func sendMarshalDataToWebSocket(method string, marshalData []byte, uniqueId stri
 		select {
 		case messageQueue <- msg:
 			// 消息成功加入队列
-			log.Printf("消息已加入队列: %s (序列号: %d, uniqueId: %s)", method, msg.SequenceID, uniqueId)
+			//LogInfo("消息已加入队列: %s (序列号: %d, uniqueId: %s)", method, msg.SequenceID, uniqueId)
 		case <-queueClosed:
 			// 队列已关闭
-			log.Printf("消息队列已关闭，丢弃消息: %s", method)
+			LogInfo("消息队列已关闭，丢弃消息: %s", method)
 		default:
 			// 队列满了，记录警告
-			log.Printf("警告: 消息队列已满，丢弃消息: %s (序列号: %d)", method, msg.SequenceID)
+			LogError("警告: 消息队列已满，丢弃消息: %s (序列号: %d)", method, msg.SequenceID)
 		}
 	}()
 }
@@ -289,25 +293,25 @@ func sendMarshalDataToWebSocket(method string, marshalData []byte, uniqueId stri
 // startMessageSender 启动消息发送协程
 func startMessageSender() {
 	go func() {
-		log.Println("启动消息发送协程...")
+		LogInfo("启动消息发送协程...")
 
 		for {
 			select {
 			case msg, ok := <-messageQueue:
 				if !ok {
-					log.Println("消息队列已关闭，发送协程退出")
+					LogInfo("消息队列已关闭，发送协程退出")
 					return
 				}
 
 				// 发送消息到WebSocket服务器
 				if err := sendMessageToWebSocket(msg); err != nil {
-					log.Printf("发送消息失败 (序列号: %d): %v", msg.SequenceID, err)
+					LogError("发送消息失败 (序列号: %d): %v", msg.SequenceID, err)
 				} else {
-					log.Printf("消息发送成功 (序列号: %d): %s", msg.SequenceID, msg.Method)
+					//LogInfo("消息发送成功 (序列号: %d): %s", msg.SequenceID, msg.Method)
 				}
 
 			case <-queueClosed:
-				log.Println("收到关闭信号，发送协程退出")
+				LogInfo("收到关闭信号，发送协程退出")
 				return
 			}
 		}
@@ -321,10 +325,12 @@ func sendMessageToWebSocket(msg MessageData) error {
 
 	// 检查WebSocket客户端状态
 	if wsClient == nil || !wsClient.IsConnected() {
-		log.Printf("WebSocket客户端未连接，尝试重新连接... (序列号: %d)", msg.SequenceID)
+		LogError("WebSocket客户端未连接，尝试重新连接... (序列号: %d)", msg.SequenceID)
 		// 异步重连
 		go func() {
-			initWebSocketClient()
+			if err := initWebSocketClient(); err != nil {
+				LogError("重新连接WebSocket客户端失败: %v", err)
+			}
 		}()
 		return fmt.Errorf("WebSocket客户端未连接")
 	}
@@ -342,11 +348,11 @@ func sendMessageToWebSocket(msg MessageData) error {
 
 	// 发送JSON消息到WebSocket服务器
 	if err := wsClient.SendJSON(message); err != nil {
-		log.Printf("发送消息到WebSocket服务器失败 (序列号: %d): %v", msg.SequenceID, err)
+		LogError("发送消息到WebSocket服务器失败 (序列号: %d): %v", msg.SequenceID, err)
 		// 异步重连
 		go func() {
 			if err := wsClient.Reconnect(); err != nil {
-				log.Printf("重新连接失败: %v", err)
+				LogError("重新连接失败: %v", err)
 			}
 		}()
 		return err
@@ -359,5 +365,5 @@ func sendMessageToWebSocket(msg MessageData) error {
 func shutdownMessageQueue() {
 	close(queueClosed)
 	close(messageQueue)
-	log.Println("消息队列已关闭")
+	LogInfo("消息队列已关闭")
 }
