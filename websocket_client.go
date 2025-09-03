@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 	"time"
 
@@ -49,7 +48,7 @@ func (c *WebSocketClient) Connect() error {
 	}
 
 	c.conn = conn
-	log.Printf("成功连接到WebSocket服务器: %s", c.url)
+	//log.Printf("成功连接到WebSocket服务器: %s", c.url)
 	return nil
 }
 
@@ -64,7 +63,7 @@ func (c *WebSocketClient) SendMessage(message string) error {
 		return fmt.Errorf("发送消息失败: %v", err)
 	}
 
-	log.Printf("成功发送文本消息: %s", message)
+	//log.Printf("成功发送文本消息: %s", message)
 	return nil
 }
 
@@ -79,7 +78,7 @@ func (c *WebSocketClient) SendBinary(data []byte) error {
 		return fmt.Errorf("发送二进制数据失败: %v", err)
 	}
 
-	log.Printf("成功发送二进制数据，长度: %d bytes", len(data))
+	//log.Printf("成功发送二进制数据，长度: %d bytes", len(data))
 	return nil
 }
 
@@ -99,7 +98,7 @@ func (c *WebSocketClient) SendJSON(data interface{}) error {
 		return fmt.Errorf("发送JSON消息失败: %v", err)
 	}
 
-	log.Printf("成功发送JSON消息: %s", string(jsonData))
+	//log.Printf("成功发送JSON消息: %s", string(jsonData))
 	return nil
 }
 
@@ -115,28 +114,30 @@ func (c *WebSocketClient) SendMarshalData(marshalData []byte) error {
 		return fmt.Errorf("发送marshal数据失败: %v", err)
 	}
 
-	log.Printf("成功发送marshal数据，长度: %d bytes", len(marshalData))
+	//log.Printf("成功发送marshal数据，长度: %d bytes", len(marshalData))
 	return nil
 }
 
 // Listen 监听服务器消息
 func (c *WebSocketClient) Listen() {
 	if c.conn == nil {
-		log.Println("WebSocket连接未建立，无法监听")
+		LogError("WebSocket连接未建立，无法监听")
 		return
 	}
 
-	log.Println("开始监听服务器消息...")
+	LogInfo("开始监听服务器消息...")
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket连接异常关闭: %v", err)
+				LogError("WebSocket连接异常关闭: %v", err)
 			}
 			break
 		}
+		if false { // 留到后面加调试标记
+			LogInfo("收到服务器消息: %s", string(message))
+		}
 
-		log.Printf("收到服务器消息: %s", string(message))
 	}
 }
 
@@ -151,7 +152,7 @@ func (c *WebSocketClient) Close() error {
 		return fmt.Errorf("关闭WebSocket连接失败: %v", err)
 	}
 
-	log.Println("WebSocket连接已关闭")
+	LogInfo("WebSocket连接已关闭")
 	return nil
 }
 
