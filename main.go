@@ -61,9 +61,6 @@ func initWebSocketClient() {
 	wsClientMutex.Lock()
 	defer wsClientMutex.Unlock()
 
-	// 从配置文件获取WebSocket服务器配置
-	config := LoadConfig()
-
 	// 创建WebSocket客户端
 	wsClient = NewWebSocketClient(config.WebSocketServer.URL, config.WebSocketServer.Headers)
 
@@ -96,6 +93,24 @@ func main() {
 		return
 	}
 
+	// 加载配置
+	config, err := LoadConfig()
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+
+	// 输出配置信息
+	fmt.Println("=== 配置信息 ===")
+	fmt.Printf("WebSocket服务器配置:\n")
+	fmt.Printf("  URL: %s\n", config.WebSocketServer.URL)
+	fmt.Printf("  Headers: %v\n", config.WebSocketServer.Headers)
+	fmt.Printf("TikTok代理配置:\n")
+	fmt.Printf("  端口: %d\n", config.TikTokProxy.Port)
+	fmt.Printf("  上游代理: %s\n", config.TikTokProxy.UpstreamProxy)
+	fmt.Printf("  超时时间: %d ms\n", config.TikTokProxy.Timeout)
+	fmt.Printf("UniqueId: %s\n", uniqueId)
+	fmt.Println("================")
+
 	// 启动消息发送协程
 	startMessageSender()
 
@@ -104,9 +119,6 @@ func main() {
 
 	// 绑定回调函数
 	Sunny.SetGoCallback(HttpCallback, TcpCallback, WSCallback, UdpCallback)
-
-	// 加载配置
-	config := LoadConfig()
 
 	// 设置端口并启动 SunnyNet 代理服务器
 	s := Sunny.SetPort(config.TikTokProxy.Port)

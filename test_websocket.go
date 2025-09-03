@@ -11,7 +11,7 @@ func TestWebSocketClient() {
 
 	// 测试配置加载
 	fmt.Println("1. 测试配置加载...")
-	config := LoadConfig()
+	config, err := LoadConfig()
 	fmt.Printf("   WebSocket服务器URL: %s\n", config.WebSocketServer.URL)
 	fmt.Printf("   TikTok代理端口: %d\n", config.TikTokProxy.Port)
 	fmt.Printf("   上游代理: %s\n", config.TikTokProxy.UpstreamProxy)
@@ -28,7 +28,7 @@ func TestWebSocketClient() {
 
 	// 连接到WebSocket服务器
 	fmt.Println("\n3. 连接到WebSocket服务器...")
-	err := client.Connect()
+	err = client.Connect()
 	if err != nil {
 		fmt.Printf("   ❌ 连接失败: %v\n", err)
 		fmt.Println("   请确保WebSocket服务器正在运行")

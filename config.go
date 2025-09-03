@@ -28,20 +28,23 @@ var (
 )
 
 // LoadConfig 加载配置文件
-func LoadConfig() *Config {
+func LoadConfig() (*Config, error) {
+	var loadErr error
 	configOnce.Do(func() {
 		config = &Config{}
 
-		// 设置默认配置
-		setDefaultConfig()
-
 		// 尝试从文件加载配置
 		if err := loadConfigFromFile(); err != nil {
-			log.Printf("加载配置文件失败，使用默认配置: %v", err)
+			log.Printf("加载配置文件失败: %v", err)
+			loadErr = err
+			return
 		}
 	})
 
-	return config
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	return config, nil
 }
 
 // setDefaultConfig 设置默认配置
@@ -100,25 +103,50 @@ func UpdateWebSocketServer(url string, headers map[string]string) {
 
 // GetWebSocketServerURL 获取WebSocket服务器URL
 func GetWebSocketServerURL() string {
-	return LoadConfig().WebSocketServer.URL
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Printf("获取WebSocket服务器URL失败: %v", err)
+		return ""
+	}
+	return cfg.WebSocketServer.URL
 }
 
 // GetWebSocketServerHeaders 获取WebSocket服务器请求头
 func GetWebSocketServerHeaders() map[string]string {
-	return LoadConfig().WebSocketServer.Headers
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Printf("获取WebSocket服务器请求头失败: %v", err)
+		return nil
+	}
+	return cfg.WebSocketServer.Headers
 }
 
 // GetTikTokProxyPort 获取TikTok代理端口
 func GetTikTokProxyPort() int {
-	return LoadConfig().TikTokProxy.Port
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Printf("获取TikTok代理端口失败: %v", err)
+		return 0
+	}
+	return cfg.TikTokProxy.Port
 }
 
 // GetUpstreamProxy 获取上游代理地址
 func GetUpstreamProxy() string {
-	return LoadConfig().TikTokProxy.UpstreamProxy
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Printf("获取上游代理地址失败: %v", err)
+		return ""
+	}
+	return cfg.TikTokProxy.UpstreamProxy
 }
 
 // GetProxyTimeout 获取代理超时时间
 func GetProxyTimeout() int {
-	return LoadConfig().TikTokProxy.Timeout
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Printf("获取代理超时时间失败: %v", err)
+		return 0
+	}
+	return cfg.TikTokProxy.Timeout
 }
